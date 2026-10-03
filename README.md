@@ -125,21 +125,23 @@ python3 bot.py          # jalan tanpa pelindung (sekali error ya berhenti)
 ## Contoh log
 
 ```
-14:03 UTC — 2 akun
-  Ab12Cd    jalan   saldo   25.0000  reward    0.0000  task 5/5
-  Xy34Zz    jalan   saldo   25.0000  reward    0.0000  task 5/5
-  total 50.0000 SST
+Bot starting... 2 akun  (2026-10-03 15:12 UTC)
+Account 1/2  Ab12Cd  ...........  Mining success   saldo 25.8332   task 5/5   reward 0.8332
+Account 2/2  Xy34Zz  ...........  Mining success   saldo 25.4166   task 5/5   reward 0.4166
+Done — 2 success, 0 failed — total 51.2498 SST (11s)
 ```
 
-Yang muncul di belakang cuma kalau ada perubahan:
+Tiap baris keluar **begitu akunnya selesai** — bukan nunggu semua akun beres. Jadi keliatan langsung jalan atau nggak.
+
+Yang ada di belakang cuma kalau ada yang berubah:
 
 ```
-  Xy34Zz    jalan   saldo   50.0000  reward 0.4166  task 5/5   [mining dimulai]
-  Ab12Cd    jalan   saldo   50.0000  reward 0.4166  task 5/5   [task 5 (+25.0000)]
-  deadbeef  GAGAL  login 401 AUTH_INVALID_CREDENTIAL
+Account 1/2  Ab12Cd  ..........  Mining success   saldo 50.0000   task 5/5   [mining dimulai]
+Account 2/2  Xy34Zz  ..........  Mining success   saldo 50.0000   task 5/5   [task 5 (+25.0000)]
+Account 3/3  deadbeef ........  Failed — login 401 AUTH_INVALID_CREDENTIAL (gagal 3x, dilewati dulu)
 ```
 
-Log juga disimpan ke `log.txt` (tiap baris ada tanggal).
+Isinya juga ditulis ke `log.txt`. **Log dibersihkan tiap cycle baru** — jadi file itu cuma nyimpen 1 cycle terakhir, nggak pernah numpuk walau jalan berbulan-bulan.
 
 ## Supaya nggak ketahuan bot
 

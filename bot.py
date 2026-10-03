@@ -272,14 +272,19 @@ def process_with_retry(key, invite, inviter_default):
 
 # ------------------------------------------------------------------ output --
 def baris(o):
+    if o.get("i"):
+        s = f"Account {o['i']}/{o['n']}  {o['code']}"
+        head = f"{s}  {'.' * max(3, 30 - len(s))}  "
+    else:
+        head = "  "
     if o.get("err"):
-        return f"  {o['code']:<8}  GAGAL  {o['err']}"
-    s = (f"  {o['code']:<8}  {o['mining']:<6}  "
-         f"saldo {float(o['balance']):>9.4f}  "
-         f"reward {float(o.get('reward') or 0):>9.4f}  task {o['task']}")
+        return f"{head}Failed — {o['err']}"
+    line = f"{head}Mining success   saldo {float(o.get('balance') or 0):.4f}   task {o.get('task', '-')}"
+    if float(o.get("reward") or 0):
+        line += f"   reward {float(o['reward']):.4f}"
     if o.get("note"):
-        s += f"   [{o['note']}]"
-    return s
+        line += f"   [{o['note']}]"
+    return line
 
 
 def emit(text="", stamp=True):
@@ -301,29 +306,40 @@ def cycle():
         emit("accounts.txt kosong — taruh key di situ")
         return
     inviter = read_inviter()
-    head = f"{time.strftime('%H:%M UTC', time.gmtime())} — {len(accts)} akun"
-    lines, total, ada_error = [], 0.0, False
     order = list(accts)
     random.shuffle(order)                      # urutan akun beda tiap cycle
-    for i, (key, inv) in enumerate(order):
+    n = len(order)
+    t0 = time.time()
+
+    # log cuma nyimpen 1 cycle terakhir — cycle baru mulai, yang lama dibersihkan
+    try:
+        with open(LOG, "w"):
+            pass
+    except Exception:
+        pass
+
+    emit(f"Bot starting... {n} akun  ({time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())})",
+         stamp=False)
+
+    total, jalan, gagal = 0.0, 0, 0
+    for i, (key, inv) in enumerate(order, 1):
         o = process_with_retry(key, inv, inviter)
-        lines.append(baris(o))
+        o["i"], o["n"] = i, n
+        emit(baris(o), stamp=False)            # langsung keluar, nggak nunggu cycle selesai
         if o.get("err"):
-            ada_error = True
+            gagal += 1
         else:
+            jalan += 1
             try:
                 total += float(o.get("balance") or 0)
             except Exception:
                 pass
-        if i < len(order) - 1:                 # jeda antar akun, nggak nempel
+        if i < n:                              # jeda antar akun, nggak nempel
             time.sleep(random.uniform(2.0, 6.0))
             think(0.15, 3.0, 10.0)
 
-    emit(head, stamp=False)
-    for ln in sorted(lines):
-        emit(ln)
-    if not ada_error:
-        emit(f"  total {total:.4f} SST")
+    dur = int(time.time() - t0)
+    emit(f"Done — {jalan} success, {gagal} failed — total {total:.4f} SST ({dur}s)", stamp=False)
     emit()
 
 
