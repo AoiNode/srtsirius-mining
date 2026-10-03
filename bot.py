@@ -447,6 +447,19 @@ def main():
         cycle(force=True)
         return
 
+    # biar keliatan bot-nya ngapain pas nyala (kalau belum ada yang jatuh tempo)
+    try:
+        accts = read_accounts()
+        ada_due = any(float(load_state(k).get("nextCheckAt") or 0) <= time.time() for k, _ in accts)
+        if accts and not ada_due:
+            kosongkan_log()
+            emit(f"Bot nyala — {len(accts)} akun, semua lagi tidur", stamp=False)
+            emit(f"Jadwal cek berikutnya: {jam(jadwal_berikutnya(accts))}", stamp=False)
+            emit("(diam dulu ya, nanti bangun sendiri pas waktunya)", stamp=False)
+            emit()
+    except Exception:
+        pass
+
     backoff = 0
     while True:                                    # loop utama: nggak pernah keluar sendiri
         nxt = None

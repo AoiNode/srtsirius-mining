@@ -145,7 +145,17 @@ Done — 3 success, 0 failed — total 76.2498 SST (14s) — cek berikutnya 22:4
 
 Tiap baris keluar **begitu akunnya selesai** — bukan nunggu semua akun beres. Jadi keliatan langsung jalan atau nggak.
 
-Kalau nggak ada akun yang jatuh tempo, bot **diam saja** — nggak ada baris apa pun, nggak ada request.
+Kalau nggak ada akun yang jatuh tempo, bot **diam saja** — nggak ada request.
+
+Pas pertama nyala biasanya begitu (jadwalnya belum lewat):
+
+```
+Bot nyala — 106 akun, semua lagi tidur
+Jadwal cek berikutnya: 22:53 UTC (5j 42m lagi)
+(diam dulu ya, nanti bangun sendiri pas waktunya)
+```
+
+Mau langsung lihat isi semua akun kapan aja: `./run.sh --once`
 
 - `Mining success` → miningnya tadi **baru dinyalakan** bot ini
 - `Already mining (skipped)` → pas bot di-restart, akunnya **emang udah jalan** — nggak diapa-apain, cuma dicek
