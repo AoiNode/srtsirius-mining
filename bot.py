@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Sirius multi-account miner.
+"""Sirius multi-account miner — jadwal per akun, bukan polling.
 
 Taruh key di accounts.txt (satu per baris), kode invite di invite.txt.
-Jalan terus: python3 bot.py        Sekali jalan: python3 bot.py --once
+Jalan terus: ./run.sh          Sekali jalan: ./run.sh --once
+
+Cara kerja: tiap akun dicatat kapan harus dicek lagi (pas reset 24 jam,
+atau tiap SIRIUS_TASK_EVERY detik buat task/saldo). Bot tidur sampai
+jadwal terdekat — yang lain tetap tidur, jadi nggak ada request sia-sia.
 """
 import json
 import os
@@ -27,18 +31,13 @@ def think(p=0.08, a=4.0, b=13.0):
         time.sleep(random.uniform(a, b))
 
 
-def night():
-    """01:00-06:00 WIB — orang tidur, jadi bot juga pelan."""
-    wib = (datetime.now(timezone.utc) + timedelta(hours=7)).hour
-    return 1 <= wib < 6
-
 BASE = os.path.dirname(os.path.abspath(__file__))
 ACCOUNTS_FILE = os.environ.get("SIRIUS_ACCOUNTS", os.path.join(BASE, "accounts.txt"))
 INVITE_FILE = os.environ.get("SIRIUS_INVITE", os.path.join(BASE, "invite.txt"))
 STATE_DIR = os.path.join(BASE, "accounts")
 LOG = os.path.join(BASE, "log.txt")
-POLL = int(os.environ.get("SIRIUS_POLL", "600"))
 MAX_RETRY = max(1, int(os.environ.get("SIRIUS_RETRY", "3")))
+TASK_EVERY = max(600, int(os.environ.get("SIRIUS_TASK_EVERY", "21600")))  # task+saldo tiap 6 jam
 KEY_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 os.makedirs(STATE_DIR, exist_ok=True)
@@ -169,43 +168,77 @@ def get(path, st, tok, _retry=True):
 
 
 # ------------------------------------------------------------- satu akun ----
-def process(key, invite_override, inviter_default):
+def parse_ts(s):
+    """'2026-10-04T15:18:00Z' -> epoch detik."""
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).replace(
+            tzinfo=timezone.utc).timestamp()
+    except Exception:
+        return None
+
+
+def process(key, invite_override, inviter_default, force=False):
     st = load_state(key)
     invite = invite_override or st.get("inviterCode") or inviter_default
-    out = {"code": key[:8], "note": "", "err": None}
+    out = {"code": st.get("userCode") or key[:8], "note": "", "err": None}
+    now = time.time()
+
+    def atur_jadwal(reset_at):
+        """Catat kapan akun ini harus dicek lagi — inilah hitung mundurnya."""
+        kandidat = [now + TASK_EVERY]
+        if reset_at:
+            kandidat.append(reset_at + random.uniform(45.0, 300.0))
+        st["nextCheckAt"] = min(kandidat)
+        save_state(st)
 
     tok = ensure_token(st)
 
-    # 1) profil + pasang kode invite
-    r, tok = get("/users/me", st, tok)
-    if r["status"] != 200:
-        out["err"] = f"login {r['status']} {err(r) or ''}".strip()
-        return out
-    me = data(r)
-    out["code"] = me.get("userCode") or key[:8]
-    if not me.get("invitationBound"):
+    # 1) profil + pasang kode invite (sekali aja, sisanya pakai cache)
+    if force or not st.get("userCode") or not st.get("invitationBound"):
+        r, tok = get("/users/me", st, tok)
+        if r["status"] != 200:
+            out["err"] = f"login {r['status']} {err(r) or ''}".strip()
+            return out
+        me = data(r)
+        st["userCode"] = me.get("userCode")
+        st["userId"] = me.get("userId")
+        st["invitationBound"] = bool(me.get("invitationBound"))
+        save_state(st)
+        out["code"] = st.get("userCode") or key[:8]
+
+    if not st.get("invitationBound"):
         if not invite:
             out["note"] = "invite belum diisi (isi invite.txt)"
         else:
             nap()
             rb = api.call("POST", "/users/me/inviter", {"inviterCode": invite}, token=tok)
             if rb["status"] == 200:
-                out["note"] = f"invite dipasang"
+                st["invitationBound"] = True
+                out["note"] = "invite dipasang"
+                save_state(st)
             else:
                 out["err"] = f"invite {rb['status']} {err(rb) or ''}".strip()
+                atur_jadwal(None)
                 return out
             nap()
-    if invite:
+    if invite and st.get("inviterCode") != invite:
         st["inviterCode"] = invite
         save_state(st)
 
-    # 2) mining
+    # 2) mining — cek status dulu, baru putuskan perlu start apa nggak
     nap()
     r, tok = get("/mining/tasks/status", st, tok)
-    ms = data(r).get("miningStatus")
-    out["reward"] = data(r).get("totalMiningReward") or "0.0000"
+    if r["status"] != 200:
+        out["err"] = f"status {r['status']} {err(r) or ''}".strip()
+        atur_jadwal(None)
+        return out
+    d = data(r)
+    ms = d.get("miningStatus")
+    out["reward"] = d.get("totalMiningReward") or "0.0000"
+    reset_at = parse_ts(d.get("largeCycleEndsAt")) if ms == "RUNNING" else None
+
     if ms != "RUNNING":
-        time.sleep(random.uniform(3.0, 15.0))   # nggak langsung ngebut
+        time.sleep(random.uniform(3.0, 15.0))       # nggak langsung ngebut
         rs = api.call("POST", "/mining/tasks/start", {}, token=tok)
         if rs["status"] == 200:
             out["started"] = True
@@ -213,55 +246,71 @@ def process(key, invite_override, inviter_default):
             out["reward"] = "0.0000"
         else:
             out["err"] = f"mulai mining {rs['status']} {err(rs) or ''}".strip()
+            atur_jadwal(None)
             return out
         nap()
         r, tok = get("/mining/tasks/status", st, tok)
-        ms = data(r).get("miningStatus")
-        out["reward"] = data(r).get("totalMiningReward") or "0.0000"
+        if r["status"] == 200:
+            d = data(r)
+            ms = d.get("miningStatus")
+            out["reward"] = d.get("totalMiningReward") or "0.0000"
+            reset_at = parse_ts(d.get("largeCycleEndsAt")) if ms == "RUNNING" else None
     out["mining"] = "jalan" if ms == "RUNNING" else (ms or "?").lower()
 
-    # 3) task
-    out["task"] = "-"
-    if st.get("runTasks", True):
+    # 3) task + saldo — cukup TASK_EVERY sekali, bukan tiap cycle
+    out["task"] = st.get("task") or "-"
+    out["balance"] = st.get("balance") or "0.0000"
+    perlu_full = force or not st.get("lastFullCheck") or \
+        (now - float(st.get("lastFullCheck") or 0)) >= TASK_EVERY
+
+    if perlu_full and st.get("runTasks", True):
         nap()
         rl, tok = get("/tasks", st, tok)
-        tasks = data(rl).get("tasks") or []
-        sudah = sum(1 for t in tasks if t.get("participated"))
-        baru, hadiah = 0, 0.0
-        for t in tasks:
-            if t.get("participated"):
-                continue
-            nap(1.4, 3.2)
-            rp = api.call("POST", f"/tasks/{t['taskId']}/participations", {}, token=tok)
-            if rp["status"] == 200:
-                baru += 1
-                try:
-                    hadiah += float((data(rp).get("amount") or 0))
-                except Exception:
-                    pass
-            elif rp["status"] == 429:
-                time.sleep(int(rp.get("retryAfter") or 13))
-        out["task"] = f"{sudah + baru}/{len(tasks)}"
-        if baru:
-            msg = f"task {baru} (+{hadiah:.4f})"
-            out["note"] = (out["note"] + " | " if out["note"] else "") + msg
-            nap()
+        if rl["status"] == 200:
+            tasks = data(rl).get("tasks") or []
+            sudah = sum(1 for t in tasks if t.get("participated"))
+            baru, hadiah = 0, 0.0
+            for t in tasks:
+                if t.get("participated"):
+                    continue
+                nap(1.4, 3.2)
+                rp = api.call("POST", f"/tasks/{t['taskId']}/participations", {}, token=tok)
+                if rp["status"] == 200:
+                    baru += 1
+                    try:
+                        hadiah += float((data(rp).get("amount") or 0))
+                    except Exception:
+                        pass
+                elif rp["status"] == 429:
+                    time.sleep(int(rp.get("retryAfter") or 13))
+            out["task"] = f"{sudah + baru}/{len(tasks)}"
+            st["task"] = out["task"]
+            save_state(st)
+            if baru:
+                msg = f"task {baru} (+{hadiah:.4f})"
+                out["note"] = (out["note"] + " | " if out["note"] else "") + msg
+                nap()
 
-    # 4) saldo
-    think()
-    r, tok = get("/overview/users/me/standard", st, tok)
-    out["balance"] = (data(r).get("points") or {}).get("totalBalance") or "0.0000"
+        think()
+        r, tok = get("/overview/users/me/standard", st, tok)
+        if r["status"] == 200:
+            out["balance"] = (data(r).get("points") or {}).get("totalBalance") or "0.0000"
+            st["balance"] = out["balance"]
+        st["lastFullCheck"] = time.time()
+        save_state(st)
+
+    atur_jadwal(reset_at)
     return out
 
 
 # ------------------------------------------------------------- retry -------
-def process_with_retry(key, invite, inviter_default):
-    """Coba sampai MAX_RETRY kali. Tetap gagal -> dilewati cycle ini,
-    dicoba lagi sendiri di cycle berikutnya (akun nggak pernah dibuang)."""
+def process_with_retry(key, invite, inviter_default, force=False):
+    """Coba sampai MAX_RETRY kali. Tetap gagal -> dilewati dulu,
+    dicoba lagi ~10 menit kemudian (akun nggak pernah dibuang)."""
     last = None
     for i in range(1, MAX_RETRY + 1):
         try:
-            out = process(key, invite, inviter_default)
+            out = process(key, invite, inviter_default, force)
         except Exception as exc:
             out = {"code": key[:8], "err": str(exc) or type(exc).__name__}
         if not out.get("err"):
@@ -305,64 +354,102 @@ def emit(text="", stamp=True):
         pass                                     # disk penuh / log gagal: jangan matiin bot
 
 
-def cycle():
-    accts = read_accounts()
-    if not accts:
-        emit("accounts.txt kosong — taruh key di situ")
-        return
-    inviter = read_inviter()
-    order = list(accts)
-    random.shuffle(order)                      # urutan akun beda tiap cycle
-    n = len(order)
-    t0 = time.time()
-
-    # log cuma nyimpen 1 cycle terakhir — cycle baru mulai, yang lama dibersihkan
+def kosongkan_log():
     try:
         with open(LOG, "w"):
             pass
     except Exception:
         pass
 
-    emit(f"Bot starting... {n} akun  ({time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())})",
+
+# --------------------------------------------------------------- jadwal -----
+def jadwal_berikutnya(accts):
+    """Waktu terdekat di antara semua akun harus dicek lagi."""
+    t = None
+    for key, _ in accts:
+        try:
+            v = float(load_state(key).get("nextCheckAt") or 0)
+        except Exception:
+            continue
+        if v > 0 and (t is None or v < t):
+            t = v
+    return t
+
+
+def jam(ts):
+    if not ts:
+        return "-"
+    sisa = max(0, int(ts - time.time()))
+    jm, menit = divmod(sisa // 60, 60)
+    head = time.strftime("%H:%M UTC", time.gmtime(ts))
+    return f"{head} ({jm}j {menit}m lagi)" if jm else f"{head} ({menit}m lagi)"
+
+
+def cycle(force=False):
+    accts = read_accounts()
+    if not accts:
+        kosongkan_log()
+        emit("accounts.txt kosong — taruh key di situ", stamp=False)
+        return None
+
+    now = time.time()
+    # cuma akun yang jatuh tempo yang disentuh — yang lain tetap tidur
+    order = [(k, inv) for k, inv in accts
+             if force or float(load_state(k).get("nextCheckAt") or 0) <= now]
+    if not order:
+        return jadwal_berikutnya(accts)            # belum ada yang waktunya — senyap
+
+    inviter = read_inviter()
+    random.shuffle(order)                          # urutan akun beda tiap cycle
+    n = len(order)
+    t0 = time.time()
+
+    kosongkan_log()    # log cuma nyimpen 1 cycle terakhir — yang lama dibersihkan
+    emit(f"Bot starting... {n} akun dicek  ({time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())})",
          stamp=False)
 
     total, jalan, gagal = 0.0, 0, 0
     for i, (key, inv) in enumerate(order, 1):
-        o = process_with_retry(key, inv, inviter)
+        o = process_with_retry(key, inv, inviter, force)
         o["i"], o["n"] = i, n
-        emit(baris(o), stamp=False)            # langsung keluar, nggak nunggu cycle selesai
+        emit(baris(o), stamp=False)                # langsung keluar, nggak nunggu selesai
         if o.get("err"):
             gagal += 1
+            try:                                   # gagal -> coba lagi ~10 menit lagi
+                st = load_state(key)
+                st["nextCheckAt"] = time.time() + random.uniform(300.0, 900.0)
+                save_state(st)
+            except Exception:
+                pass
         else:
             jalan += 1
             try:
                 total += float(o.get("balance") or 0)
             except Exception:
                 pass
-        if i < n:                              # jeda antar akun, nggak nempel
+        if i < n:                                  # jeda antar akun, nggak nempel
             time.sleep(random.uniform(2.0, 6.0))
             think(0.15, 3.0, 10.0)
 
     dur = int(time.time() - t0)
-    emit(f"Done — {jalan} success, {gagal} failed — total {total:.4f} SST ({dur}s)", stamp=False)
+    nxt = jadwal_berikutnya(accts)
+    emit(f"Done — {jalan} success, {gagal} failed — total {total:.4f} SST ({dur}s) "
+         f"— cek berikutnya {jam(nxt)}", stamp=False)
     emit()
+    return nxt
 
 
-def next_pause():
-    """Istirahat antar cycle — durasinya beda-beda, malam hari lebih jarang."""
-    if night():
-        return random.randint(1500, 2400)          # 01:00-06:00 WIB: 25-40 menit
-    return random.randint(max(300, POLL - 90), POLL + 180)
-
-
+# ------------------------------------------------------------------- main ---
 def main():
     if "--once" in sys.argv:
-        cycle()
+        cycle(force=True)
         return
+
     backoff = 0
-    while True:                                # loop utama: nggak pernah keluar sendiri
+    while True:                                    # loop utama: nggak pernah keluar sendiri
+        nxt = None
         try:
-            cycle()
+            nxt = cycle()
             backoff = 0
         except Exception as exc:
             try:
@@ -370,8 +457,18 @@ def main():
             except Exception:
                 pass
             backoff = min(900, max(30, (backoff or 15) * 2))
+
         try:
-            time.sleep(backoff or next_pause())
+            if backoff:
+                tidur = backoff
+            else:
+                # tidur sampai jadwal terdekat, tapi paling lama 3-6 menit sekali
+                # (bangun cuma buat baca accounts.txt — lokal, tanpa request)
+                now = time.time()
+                batas = random.randint(180, 360)
+                tidur = min(nxt - now, batas) if (nxt and nxt > now) else batas
+                tidur = max(15.0, tidur)
+            time.sleep(tidur)
         except Exception:
             time.sleep(60)
 
@@ -381,7 +478,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("dihentikan manual.")
-    except BaseException as exc:               # jaring pengaman terakhir
+    except BaseException as exc:                   # jaring pengaman terakhir
         try:
             with open(LOG, "a") as fh:
                 fh.write(f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}  CRASH: {exc}\n")

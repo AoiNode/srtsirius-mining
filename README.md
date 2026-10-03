@@ -14,6 +14,17 @@ Bisa ratusan akun, satu proses.
 
 Semua akun punya jam mining sendiri-sendiri (dihitung dari waktu akun itu mulai), jadi nggak perlu disinkronkan.
 
+## Kerjanya jadwal, bukan polling
+
+Bot **nggak** ngecek tiap 10 menit. Tiap akun dicatat kapan harus dicek lagi:
+
+- **pas reset 24 jam** → nyalain mining lagi (jeda acak 45–300 detik)
+- **tiap 6 jam** → cek task baru + saldo
+
+Sisanya bot tidur. Tiap 3–6 menit dia bangun sebentar **cuma buat baca `accounts.txt`** (file lokal, tanpa request) — biar key yang baru ditambah langsung keproses.
+
+Jadi 100 akun bukan berarti 100 kali cek tiap 10 menit. Yang ada cuma jadwal masing-masing akun.
+
 ## Cara pasang
 
 Butuh Python 3.8+ sama internet. Nggak ada browser, nggak ada Playwright — ringan.
@@ -125,14 +136,16 @@ python3 bot.py          # jalan tanpa pelindung (sekali error ya berhenti)
 ## Contoh log
 
 ```
-Bot starting... 3 akun  (2026-10-03 15:21 UTC)
+Bot starting... 3 akun dicek  (2026-10-03 16:46 UTC)
 Account 1/3  Ab12Cd  ...........  Mining success   saldo 25.0000   task 5/5   [mining dimulai]
 Account 2/3  Xy34Zz  ...........  Already mining (skipped)   saldo 25.8332   task 5/5   reward 0.8332
 Account 3/3  Qw90Er  ...........  Already mining (skipped)   saldo 25.4166   task 5/5   reward 0.4166
-Done — 3 success, 0 failed — total 76.2498 SST (14s)
+Done — 3 success, 0 failed — total 76.2498 SST (14s) — cek berikutnya 22:42 UTC (5j 56m lagi)
 ```
 
 Tiap baris keluar **begitu akunnya selesai** — bukan nunggu semua akun beres. Jadi keliatan langsung jalan atau nggak.
+
+Kalau nggak ada akun yang jatuh tempo, bot **diam saja** — nggak ada baris apa pun, nggak ada request.
 
 - `Mining success` → miningnya tadi **baru dinyalakan** bot ini
 - `Already mining (skipped)` → pas bot di-restart, akunnya **emang udah jalan** — nggak diapa-apain, cuma dicek
@@ -165,7 +178,7 @@ Pola kerjanya sengaja dibikin nggak kaku:
 
 | Variabel | Default | Fungsi |
 |---|---|---|
-| `SIRIUS_POLL` | `600` | jeda dasar antar cycle (detik) |
+| `SIRIUS_TASK_EVERY` | `21600` | seberapa sering cek task + saldo (detik, default 6 jam) |
 | `SIRIUS_ACCOUNTS` | `./accounts.txt` | lokasi file key |
 | `SIRIUS_INVITE` | `./invite.txt` | lokasi file kode invite |
 | `SIRIUS_RETRY` | `3` | berapa kali akun yang gagal dicoba ulang |
