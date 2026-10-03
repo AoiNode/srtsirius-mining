@@ -185,7 +185,9 @@ def process(key, invite_override, inviter_default, force=False):
 
     def atur_jadwal(reset_at):
         """Catat kapan akun ini harus dicek lagi — inilah hitung mundurnya."""
-        kandidat = [now + TASK_EVERY]
+        # TASK_EVERY dikasih jeda acak 0-45 menit biar ratusan akun nggak
+        # bangun di detik yang sama (dibagi jadi batch kecil sepanjang waktu)
+        kandidat = [now + TASK_EVERY + random.uniform(0.0, 2700.0)]
         if reset_at:
             kandidat.append(reset_at + random.uniform(45.0, 300.0))
         st["nextCheckAt"] = min(kandidat)
