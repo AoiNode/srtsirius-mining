@@ -1,0 +1,28 @@
+# Pasang:
+#   sudo cp srtsirius-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now srtsirius-bot
+#
+# Lihat log:
+#   journalctl -u srtsirius-bot -f
+#   (atau lihat log.txt di folder repo)
+#
+# Sesuaikan WorkingDirectory & ExecStart dengan lokasi python kamu.
+
+[Unit]
+Description=Sirius mining bot (srtsirius-mining)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/sirius-bot
+ExecStart=/home/ubuntu/sirius-bot/.venv/bin/python -u bot.py
+Restart=always
+RestartSec=20
+StartLimitInterval=0
+StandardOutput=append:/home/ubuntu/sirius-bot/log.txt
+StandardError=append:/home/ubuntu/sirius-bot/log.err
+
+[Install]
+WantedBy=multi-user.target

@@ -21,7 +21,8 @@ Butuh Python 3.8+.
 ```bash
 git clone https://github.com/AoiNode/srtsirius-mining.git
 cd srtsirius-mining
-pip install requests cryptography
+python3 -m venv .venv
+.venv/bin/pip install requests cryptography
 ```
 
 ## Pakai
@@ -100,6 +101,24 @@ Pola kerjanya sengaja dibikin nggak kaku:
 | `SIRIUS_POLL` | `600` | jeda dasar antar cycle (detik) |
 | `SIRIUS_ACCOUNTS` | `./accounts.txt` | lokasi file key |
 | `SIRIUS_INVITE` | `./invite.txt` | lokasi file kode invite |
+| `SIRIUS_RETRY` | `3` | berapa kali akun yang gagal dicoba ulang |
+
+## Gagal? Nggak mati
+
+Kalau satu akun error (jaringan putus, token nolak, server lagi aneh):
+
+1. dicoba ulang sampai **3 kali** (dengan jeda mundur),
+2. masih gagal → **dilewati cycle ini**,
+3. cycle berikutnya akun itu **dicoba lagi sendiri** — nggak pernah dibuang.
+
+Akun lain tetap jalan — satu akun rusak nggak pernah menghentikan yang lain.
+
+Botnya sendiri juga dirancang nggak gampang mati:
+
+- loop utama nggak pernah keluar sendiri, error cycle ditahan + backoff
+- nulis log yang gagal (disk penuh) nggak bikin crash
+- crash total pun tetap dicatat ke `log.txt`
+- dijalankan lewat `./run.sh` → kalau python keluar, langsung nyala lagi 10 detik kemudian
 
 ## Jalan di HP (Termux)
 
@@ -107,16 +126,31 @@ Pola kerjanya sengaja dibikin nggak kaku:
 pkg install python
 pip install requests cryptography
 termux-wake-lock
-python3 bot.py
+./run.sh
 ```
 
-Butuh internet doang — nggak ada Playwright, nggak ada browser.
+`run.sh` bikin bot restart sendiri kalau ke-close. Butuh internet doang — nggak ada Playwright, nggak ada browser.
+
+## Biar nggak mati pas VPS reboot
+
+Pakai systemd:
+
+```bash
+sudo cp srtsirius-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now srtsirius-bot
+```
+
+`Restart=always` → otomatis nyala lagi walau crash atau server reboot.
+Log: `journalctl -u srtsirius-bot -f`
 
 ## Struktur file
 
 ```
 bot.py                  bot utama (multi-akun)
 api.py                  client API + envelope JWE
+run.sh                  pelindung: restart terus kalau python keluar
+srtsirius-bot.service   unit systemd buat VPS
 accounts.txt            key milikmu          (tidak ikut ke git)
 invite.txt              kode invite          (tidak ikut ke git)
 accounts/*.json         token tiap akun      (tidak ikut ke git)

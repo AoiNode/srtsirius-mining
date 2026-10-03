@@ -38,6 +38,7 @@ INVITE_FILE = os.environ.get("SIRIUS_INVITE", os.path.join(BASE, "invite.txt"))
 STATE_DIR = os.path.join(BASE, "accounts")
 LOG = os.path.join(BASE, "log.txt")
 POLL = int(os.environ.get("SIRIUS_POLL", "600"))
+MAX_RETRY = max(1, int(os.environ.get("SIRIUS_RETRY", "3")))
 KEY_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 os.makedirs(STATE_DIR, exist_ok=True)
@@ -249,6 +250,26 @@ def process(key, invite_override, inviter_default):
     return out
 
 
+# ------------------------------------------------------------- retry -------
+def process_with_retry(key, invite, inviter_default):
+    """Coba sampai MAX_RETRY kali. Tetap gagal -> dilewati cycle ini,
+    dicoba lagi sendiri di cycle berikutnya (akun nggak pernah dibuang)."""
+    last = None
+    for i in range(1, MAX_RETRY + 1):
+        try:
+            out = process(key, invite, inviter_default)
+        except Exception as exc:
+            out = {"code": key[:8], "err": str(exc) or type(exc).__name__}
+        if not out.get("err"):
+            if i > 1:
+                out["note"] = (out["note"] + " | " if out.get("note") else "") + f"ok di percobaan {i}"
+            return out
+        last = out["err"]
+        if i < MAX_RETRY:
+            time.sleep(random.uniform(4.0, 18.0) * i)   # mundur pelan-pelan
+    return {"code": key[:8], "err": f"{last} (gagal {MAX_RETRY}x, dilewati dulu)"}
+
+
 # ------------------------------------------------------------------ output --
 def baris(o):
     if o.get("err"):
@@ -262,10 +283,16 @@ def baris(o):
 
 
 def emit(text="", stamp=True):
-    print(text, flush=True)
-    prefix = (time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()) + "  ") if (stamp and text) else ""
-    with open(LOG, "a") as fh:
-        fh.write(prefix + text + "\n")
+    try:
+        print(text, flush=True)
+    except Exception:
+        pass
+    try:
+        prefix = (time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()) + "  ") if (stamp and text) else ""
+        with open(LOG, "a") as fh:
+            fh.write(prefix + text + "\n")
+    except Exception:
+        pass                                     # disk penuh / log gagal: jangan matiin bot
 
 
 def cycle():
@@ -279,10 +306,7 @@ def cycle():
     order = list(accts)
     random.shuffle(order)                      # urutan akun beda tiap cycle
     for i, (key, inv) in enumerate(order):
-        try:
-            o = process(key, inv, inviter)
-        except Exception as exc:
-            o = {"code": key[:8], "err": str(exc)}
+        o = process_with_retry(key, inv, inviter)
         lines.append(baris(o))
         if o.get("err"):
             ada_error = True
@@ -314,13 +338,32 @@ def main():
     if "--once" in sys.argv:
         cycle()
         return
-    while True:
+    backoff = 0
+    while True:                                # loop utama: nggak pernah keluar sendiri
         try:
             cycle()
+            backoff = 0
         except Exception as exc:
-            emit(f"cycle error: {exc}")
-        time.sleep(next_pause())
+            try:
+                emit(f"cycle error: {exc} — coba lagi nanti")
+            except Exception:
+                pass
+            backoff = min(900, max(30, (backoff or 15) * 2))
+        try:
+            time.sleep(backoff or next_pause())
+        except Exception:
+            time.sleep(60)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("dihentikan manual.")
+    except BaseException as exc:               # jaring pengaman terakhir
+        try:
+            with open(LOG, "a") as fh:
+                fh.write(f"{time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}  CRASH: {exc}\n")
+        except Exception:
+            pass
+        raise

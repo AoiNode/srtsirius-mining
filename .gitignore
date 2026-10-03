@@ -5,6 +5,7 @@ accounts/
 keys*.json
 *.jsonl
 log.txt
+log.err
 apidocs.json
 
 # ---- script eksperimen / debug ----
