@@ -125,13 +125,17 @@ python3 bot.py          # jalan tanpa pelindung (sekali error ya berhenti)
 ## Contoh log
 
 ```
-Bot starting... 2 akun  (2026-10-03 15:12 UTC)
-Account 1/2  Ab12Cd  ...........  Mining success   saldo 25.8332   task 5/5   reward 0.8332
-Account 2/2  Xy34Zz  ...........  Mining success   saldo 25.4166   task 5/5   reward 0.4166
-Done — 2 success, 0 failed — total 51.2498 SST (11s)
+Bot starting... 3 akun  (2026-10-03 15:21 UTC)
+Account 1/3  Ab12Cd  ...........  Mining success   saldo 25.0000   task 5/5   [mining dimulai]
+Account 2/3  Xy34Zz  ...........  Already mining (skipped)   saldo 25.8332   task 5/5   reward 0.8332
+Account 3/3  Qw90Er  ...........  Already mining (skipped)   saldo 25.4166   task 5/5   reward 0.4166
+Done — 3 success, 0 failed — total 76.2498 SST (14s)
 ```
 
 Tiap baris keluar **begitu akunnya selesai** — bukan nunggu semua akun beres. Jadi keliatan langsung jalan atau nggak.
+
+- `Mining success` → miningnya tadi **baru dinyalakan** bot ini
+- `Already mining (skipped)` → pas bot di-restart, akunnya **emang udah jalan** — nggak diapa-apain, cuma dicek
 
 Yang ada di belakang cuma kalau ada yang berubah:
 

@@ -159,7 +159,10 @@ def ensure_token(st):
 def get(path, st, tok, _retry=True):
     r = api.call("GET", path, token=tok)
     if r["status"] == 401 and _retry:
-        time.sleep(1)
+        # token ditolak server (expired / dicabut session lain) → buang, paksa ambil baru
+        st["accessToken"] = None
+        save_state(st)
+        time.sleep(random.uniform(1.0, 3.0))
         tok = ensure_token(st)
         return get(path, st, tok, _retry=False)
     return r, tok
@@ -205,6 +208,7 @@ def process(key, invite_override, inviter_default):
         time.sleep(random.uniform(3.0, 15.0))   # nggak langsung ngebut
         rs = api.call("POST", "/mining/tasks/start", {}, token=tok)
         if rs["status"] == 200:
+            out["started"] = True
             out["note"] = (out["note"] + " | " if out["note"] else "") + "mining dimulai"
             out["reward"] = "0.0000"
         else:
@@ -279,7 +283,8 @@ def baris(o):
         head = "  "
     if o.get("err"):
         return f"{head}Failed — {o['err']}"
-    line = f"{head}Mining success   saldo {float(o.get('balance') or 0):.4f}   task {o.get('task', '-')}"
+    word = "Mining success" if o.get("started") else "Already mining (skipped)"
+    line = f"{head}{word}   saldo {float(o.get('balance') or 0):.4f}   task {o.get('task', '-')}"
     if float(o.get("reward") or 0):
         line += f"   reward {float(o['reward']):.4f}"
     if o.get("note"):
