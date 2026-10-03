@@ -1,0 +1,5 @@
+# Salin file ini jadi `accounts.txt`, lalu isi dengan key milikmu.
+# Satu key per baris. Key = identityId (64 karakter hex).
+# Kalau mau pakai kode invite beda untuk 1 akun: <key> <kode_invite>
+# Baris kosong dan yang diawali # diabaikan.
+

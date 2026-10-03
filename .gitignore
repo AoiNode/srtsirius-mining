@@ -1,0 +1,27 @@
+# ---- data pribadi: jangan pernah ke-commit ----
+accounts.txt
+invite.txt
+accounts/
+keys*.json
+*.jsonl
+log.txt
+apidocs.json
+
+# ---- script eksperimen / debug ----
+probe*.py
+dbg*.py
+sweep*.py
+flow.py
+register.py
+turnstile.py
+real_widget.py
+compact_widget.py
+envelope.py
+client.py
+miner.py
+
+# ---- runtime ----
+__pycache__/
+*.pyc
+.venv/
+venv/

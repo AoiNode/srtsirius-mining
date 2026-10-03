@@ -1,0 +1,3 @@
+# Salin file ini jadi `invite.txt` lalu isi dengan kode invite milikmu.
+# Dipakai untuk semua akun yang belum punya inviter.
+KODE_INVITE_KAMU
