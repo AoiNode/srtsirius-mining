@@ -26,8 +26,11 @@ Butuh Python 3.8+ sama internet. Nggak ada browser, nggak ada Playwright — rin
 
 ```bash
 pkg update && pkg upgrade
-pkg install python git
+pkg install python git python-cryptography
+python -m pip install requests
 ```
+
+Catatan: `cryptography` memang harus lewat `pkg` (bukan `pip`) — di Termux pip nggak bisa nge-build itu.
 
 3. Ambil botnya:
 
@@ -76,7 +79,8 @@ python3 -m venv .venv
 
 | Error | Solusinya |
 |---|---|
-| `ModuleNotFoundError: No module named 'cryptography'` | biarkan `./run.sh` yang pasang, atau `pip install requests cryptography` lalu `./run.sh` lagi |
+| `ModuleNotFoundError: No module named 'cryptography'` | di Termux: `pkg install python-cryptography` lalu `python -m pip install requests` |
+| `Target triple not supported by rustup` / gagal build `cryptography` | pip memang nggak bisa build itu di Termux — pakai `pkg install python-cryptography` |
 | `Permission denied` | `chmod +x run.sh` |
 | `pkg: command not found` | kamu belum di Termux / Termux belum keinstall |
 | bot langsung ke-close | cek `log.txt`, kemungkinan kena rate limit — tunggu sebentar lalu `./run.sh` lagi |

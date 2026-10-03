@@ -8,22 +8,37 @@
 
 cd "$(dirname "$0")" || exit 1
 PYTHON="${PYTHON:-python3}"
+have() { "$PYTHON" -c "import $1" 2>/dev/null; }
 
-# --- 1. pastikan dependensi ada (sekali di awal, bukan tiap restart) ---
-if ! "$PYTHON" -c "import requests, cryptography" 2>/dev/null; then
-  echo "[$(date '+%H:%M:%S')] dependensi belum ada — pasang dulu ya"
-  if "$PYTHON" -m pip install --quiet requests cryptography; then
-    echo "[$(date '+%H:%M:%S')] requests + cryptography siap"
+# --- 1. dependensi (sekali di awal, bukan tiap restart) ---
+if ! have requests || ! have cryptography; then
+  echo "[$(date '+%H:%M:%S')] dependensi belum ada — pasang dulu"
+
+  if [ -d /data/data/com.termux ]; then
+    # Termux: cryptography butuh Rust buat dibuild dari pip, jadi pip pasti gagal.
+    # Pakai package resmi Termux yang udah jadi binary.
+    echo "  -> Termux: pakai package resmi (bukan pip)"
+    pkg install -y python-cryptography >/dev/null 2>&1
+    have cryptography || "$PYTHON" -m pip install --quiet cryptography
+    have requests || "$PYTHON" -m pip install --quiet requests
   else
-    echo ""
-    echo "Gagal pasang otomatis. Coba jalankan ini lalu jalankan ./run.sh lagi:"
+    "$PYTHON" -m pip install --quiet requests cryptography
+  fi
+fi
+
+if ! have requests || ! have cryptography; then
+  echo ""
+  echo "Belum lengkap. Jalankan ini lalu ./run.sh lagi:"
+  if [ -d /data/data/com.termux ]; then
+    echo "    pkg install python-cryptography"
+    echo "    python -m pip install requests"
+  else
     echo "    $PYTHON -m pip install requests cryptography"
-    echo ""
-    echo "Kalau tetap gagal, pakai venv:"
+    echo "atau pakai venv:"
     echo "    $PYTHON -m venv .venv && .venv/bin/pip install requests cryptography"
     echo "    PYTHON=.venv/bin/python ./run.sh"
-    exit 1
   fi
+  exit 1
 fi
 
 # --- 2. loop utama: bot keluar apa pun alasnya, nyala lagi ---
