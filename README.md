@@ -14,16 +14,72 @@ Bisa ratusan akun, satu proses.
 
 Semua akun punya jam mining sendiri-sendiri (dihitung dari waktu akun itu mulai), jadi nggak perlu disinkronkan.
 
-## Pasang
+## Cara pasang
 
-Butuh Python 3.8+.
+Butuh Python 3.8+ sama internet. Nggak ada browser, nggak ada Playwright — ringan.
+
+### Di HP (Termux)
+
+1. Install **Termux** (dari F-Droid, ambil yang paling baru).
+
+2. Buka Termux, jalanin ini satu-satu:
+
+```bash
+pkg update && pkg upgrade
+pkg install python git
+```
+
+3. Ambil botnya:
+
+```bash
+git clone https://github.com/AoiNode/srtsirius-mining.git
+cd srtsirius-mining
+```
+
+4. Siapkan dua file. Ini aja yang nggak ikut ke GitHub (biar rahasia):
+
+```bash
+cp accounts.example.txt accounts.txt
+cp invite.example.txt invite.txt
+nano accounts.txt     # tempel key, satu baris satu akun. Selesai: Ctrl+X lalu Y
+nano invite.txt       # isi kode invite kamu, satu baris
+```
+
+5. Nyalain:
+
+```bash
+termux-wake-lock
+./run.sh
+```
+
+`run.sh` ngecek dependensi dulu — kalau `requests`/`cryptography` belum ada, dia pasang sendiri. Jadi `ModuleNotFoundError: No module named 'cryptography'` nggak bakal kejadian lagi. Abis itu jalan terus: kalau python-nya ke-close, nyala lagi 10 detik kemudian.
+
+6. Mau lihat lagi jalan apa nggak:
+
+```bash
+tail -f log.txt
+```
+
+Matiin: `Ctrl+C`.
+
+### Di server / VPS
 
 ```bash
 git clone https://github.com/AoiNode/srtsirius-mining.git
 cd srtsirius-mining
 python3 -m venv .venv
 .venv/bin/pip install requests cryptography
+./run.sh
 ```
+
+### Kalau error
+
+| Error | Solusinya |
+|---|---|
+| `ModuleNotFoundError: No module named 'cryptography'` | biarkan `./run.sh` yang pasang, atau `pip install requests cryptography` lalu `./run.sh` lagi |
+| `Permission denied` | `chmod +x run.sh` |
+| `pkg: command not found` | kamu belum di Termux / Termux belum keinstall |
+| bot langsung ke-close | cek `log.txt`, kemungkinan kena rate limit — tunggu sebentar lalu `./run.sh` lagi |
 
 ## Pakai
 
@@ -57,8 +113,9 @@ Isi `invite.txt` dengan kode invite kamu (satu baris). Dipakai buat semua akun y
 **3. Jalanin**
 
 ```bash
-python3 bot.py          # jalan terus
-python3 bot.py --once   # sekali jalan, lalu keluar
+./run.sh                # jalan terus + auto-restart
+./run.sh --once         # sekali jalan, lalu keluar
+python3 bot.py          # jalan tanpa pelindung (sekali error ya berhenti)
 ```
 
 ## Contoh log
@@ -119,17 +176,6 @@ Botnya sendiri juga dirancang nggak gampang mati:
 - nulis log yang gagal (disk penuh) nggak bikin crash
 - crash total pun tetap dicatat ke `log.txt`
 - dijalankan lewat `./run.sh` → kalau python keluar, langsung nyala lagi 10 detik kemudian
-
-## Jalan di HP (Termux)
-
-```bash
-pkg install python
-pip install requests cryptography
-termux-wake-lock
-./run.sh
-```
-
-`run.sh` bikin bot restart sendiri kalau ke-close. Butuh internet doang — nggak ada Playwright, nggak ada browser.
 
 ## Biar nggak mati pas VPS reboot
 
